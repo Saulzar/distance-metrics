@@ -9,6 +9,17 @@
 #include "metrics.h"
 
 
+inline THCState* getCutorchState(lua_State* L)
+{
+    lua_getglobal(L, "cutorch");
+    lua_getfield(L, -1, "getState");
+    lua_call(L, 0, 1);
+    THCState *state = (THCState*) lua_touserdata(L, -1);
+    lua_pop(L, 2);
+    return state;
+}
+
+
 inline void luaAssert (bool condition, const char *message) {
  
   if(!condition)
@@ -26,8 +37,10 @@ enum DistanceMetric {
 
 static int distances(lua_State* L) {
   THCudaTensor *distances = NULL;
+  THCState *state = getCutorchState(L);
  
   try {
+    
     
     THCudaTensor *ref =   (THCudaTensor*)luaT_checkudata(L, 1, "torch.CudaTensor");
     THCudaTensor *query =   (THCudaTensor*)luaT_checkudata(L, 2, "torch.CudaTensor");  
@@ -40,25 +53,25 @@ static int distances(lua_State* L) {
     if(features != query->size[1])
       throw std::invalid_argument("distances: query and reference points must have the same size");
     
-    distances = THCudaTensor_newWithSize2d(ref->size[0], query->size[0]);
+    distances = THCudaTensor_newWithSize2d(state, ref->size[0], query->size[0]);
 
     switch(metric) {
       case L1:  
-        distanceL1(THCudaTensor_data(ref), ref->size[0], THCudaTensor_data(query), query->size[0], features, THCudaTensor_data(distances));
+        distanceL1(THCudaTensor_data(state, ref), ref->size[0], THCudaTensor_data(state, query), query->size[0], features, THCudaTensor_data(state, distances));
         break;
       case L2:
-        distanceL2(THCudaTensor_data(ref), ref->size[0], THCudaTensor_data(query), query->size[0], features, THCudaTensor_data(distances));
+        distanceL2(THCudaTensor_data(state, ref), ref->size[0], THCudaTensor_data(state, query), query->size[0], features, THCudaTensor_data(state, distances));
         break;
       case LP: {
         float p = lua_tonumber(L, 4);    
-        distanceLP(THCudaTensor_data(ref), ref->size[0], THCudaTensor_data(query), query->size[0], features, THCudaTensor_data(distances), p);
+        distanceLP(THCudaTensor_data(state, ref), ref->size[0], THCudaTensor_data(state, query), query->size[0], features, THCudaTensor_data(state, distances), p);
         break;
       }
       default:
         throw std::invalid_argument("distances: bad distance metric type");        
     }
     
-    THCudaTensor_retain(distances);   
+    THCudaTensor_retain(state, distances);   
     luaT_pushudata(L, distances, "torch.CudaTensor");
     
     return 1;
@@ -66,7 +79,7 @@ static int distances(lua_State* L) {
   } catch (std::exception const &e) {
     
     if(distances) {
-      THCudaTensor_free(distances);
+      THCudaTensor_free(state, distances);
     }
     
     
